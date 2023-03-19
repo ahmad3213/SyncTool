@@ -316,7 +316,7 @@ private:
             auto integral = integrals.at(input->name);
             std::wostringstream ss;
             ss << std::wstring(input->name.begin(), input->name.end()) << L": ";
-            if(integral.GetValue() > draw_options->zero_threshold)
+            if(integral.value > draw_options->zero_threshold)
                 ss << integral;
             else
                 ss << L"0";

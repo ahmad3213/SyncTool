@@ -33,7 +33,7 @@ Synchronise on an event-by-event basis. Output contains:
 
 How to run
 ```sh
-python EventSync.py --config MY_CONFIG --channel MY_CHANNEL --sample MY_SAMPLE --group GROUP1 --file FILE1.ROOT --tree TREE1 --group GROUP2 --file FILE2.root --tree TREE2 &> sync.log
+python EventSync.py --config MY_CONFIG --channel MY_CHANNEL --sample MY_SAMPLE --group GROUP1 --file FILE1.root --tree TREE1 --group GROUP2 --file FILE2.root --tree TREE2 &> sync.log
 ```
 
 Example:
@@ -45,4 +45,12 @@ python EventSync.py --config config/PI_LLR.cfg --channel tauTau --sample TT --gr
 
 Synchronise on output shapes used for the limit extraction.
 
-Coming soon (code porting is in progress)
+How to run
+```sh
+python ShapeSync.py --config MY_CONFIG --input INPUT1.root --input INPUT2.root --output OUTPUT.pdf &> shape_sync.log
+```
+
+Example:
+```sh
+python ShapeSync.py --config config/PI_LLR_shape.cfg --input PI_shapes.root --input LLR_shapes.root --output shape_sync.pdf &> shape_sync.log
+```
