@@ -152,6 +152,8 @@ private:
         std::shared_ptr<TTree> tree(root_ext::ReadObject<TTree>(*file, treeName));
         if(!tree)
             throw exception("File '%1%' is empty.") % fileName;
+        if(preSelection.size() == 0)
+            return tree;
         if(!tmpRootFile) {
             tmpName = boost::filesystem::unique_path("%%%%-%%%%.root").native();
             tmpRootFile = std::shared_ptr<TFile>(new TFile(tmpName.c_str(), "RECREATE"));

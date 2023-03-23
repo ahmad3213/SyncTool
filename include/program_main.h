@@ -78,7 +78,10 @@ int Main(int argc, char* argv[], const Options& options, const options_descripti
         Program program(options);
         program.Run();
     } catch(analysis::exception& e) {
-        std::cerr << "ERROR: " << e.what() << "\nStack trace:\n" << e.stacktrace() << std::endl;
+        std::cerr << "ERROR: " << e.what();
+        if(!e.stacktrace().empty())
+            std::cerr << "\nStack trace:\n" << e.stacktrace();
+        std::cerr << std::endl;
         return ERROR_EXIT_CODE;
     } catch(std::exception& e) {
         std::cerr << "ERROR: " << e.what() << std::endl;
