@@ -26,12 +26,10 @@ if __name__ == "__main__":
         df = df.Filter(f"{id_branches[evt_idx]}=={evt_id[evt_idx]}")
     all_columns = sorted([ str(c) for c in df.GetColumnNames() ])
     column_types = { c : str(df.GetColumnType(c)) for c in all_columns }
-
-    known_types = {'UInt_t',  'ULong64_t', 'Bool_t', 'Float_t', 'ROOT::VecOps::RVec<Float_t>', 'Int_t', 'ROOT::VecOps::RVec<Bool_t>', 'ROOT::VecOps::RVec<Int_t>'}
+    known_types = {'UInt_t', 'Double_t', 'ULong64_t', 'Bool_t', 'Float_t', 'ROOT::VecOps::RVec<Float_t>', 'Int_t', 'ROOT::VecOps::RVec<Bool_t>', 'ROOT::VecOps::RVec<Int_t>'}
     #column_types = {str(df.GetColumnType(c)) for c in all_columns}
     #print(column_types)
     col_to_print = [ c for c in all_columns if column_types[c] in known_types ]
-
 
     df_np = df.AsNumpy(col_to_print)
     for col in col_to_print:
