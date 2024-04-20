@@ -73,7 +73,13 @@
 			"cfenv": "cpp",
 			"cinttypes": "cpp",
 			"typeindex": "cpp",
-			"typeinfo": "cpp"
+			"typeinfo": "cpp",
+			"charconv": "cpp",
+			"codecvt": "cpp",
+			"csignal": "cpp",
+			"format": "cpp",
+			"shared_mutex": "cpp",
+			"variant": "cpp"
 		}
 	}
 }

@@ -7,8 +7,9 @@
 #include <iostream>
 #include <stdexcept>
 #include <cmath>
+#include <cstdio>
 #include <memory>
-#include <boost/filesystem.hpp>
+#include <filesystem>
 #include <TFile.h>
 #include <TTree.h>
 #include <TString.h>
@@ -24,18 +25,17 @@
 #include "RootExt.h"
 #include "EventIdentifier.h"
 
-#include "program_main.h"
 #include "SyncPlotsConfig.h"
 
 struct Arguments {
-    REQ_ARG(std::string, config);
-    REQ_ARG(std::string, channel);
-    REQ_ARG(std::string, sample);
-    REQ_ARG(std::vector<std::string>, group);
-    REQ_ARG(std::vector<std::string>, file);
-    REQ_ARG(std::vector<std::string>, tree);
-    OPT_ARG(std::vector<std::string>, preSelection, std::vector<std::string>());
-    OPT_ARG(double, badThreshold, 0.01);
+    std::string config;
+    std::string channel;
+    std::string sample;
+    std::vector<std::string> group;
+    std::vector<std::string> file;
+    std::vector<std::string> tree;
+    std::vector<std::string> preSelection;
+    double badThreshold;
 };
 
 namespace {
@@ -46,7 +46,7 @@ struct BadEventCheck {
         if(first == second) return false;
         if(first == 0 || second == 0) return true;
         const auto delta = first - second;
-        return std::abs<T>(delta/second) >= badThreshold;
+        return std::fabs(delta/second) >= badThreshold;
     }
 };
 
@@ -77,23 +77,25 @@ public:
     using Hist2DPtr = std::shared_ptr<Hist2D>;
 
     EventSync(const Arguments& _args) :
-        args(_args), config(args.config()), channel(args.channel()), sample(args.sample()),
+        args(_args), config(args.config), channel(args.channel), sample(args.sample),
         isFirstPage(true), isLastDraw(false)
     {
-        if(args.group().size() != N || args.file().size() != N || args.tree().size() != N
-                || args.preSelection().size() > N )
+        if(args.group.size() != N || args.file.size() != N || args.tree.size() != N
+                || args.preSelection.size() > N )
             throw exception("Invalid number of arguments");
 
         std::cout << channel << " " << sample << std::endl;
         for(size_t n = 0; n < N; ++n) {
-            groups[n] = args.group().at(n);
-            rootFileNames[n] = args.file().at(n);
-            treeNames[n] = args.tree().at(n);
-            if(args.preSelection().size() > n)
-                preSelections[n] = args.preSelection().at(n);
+            groups[n] = args.group.at(n);
+            rootFileNames[n] = args.file.at(n);
+            treeNames[n] = args.tree.at(n);
+            if(args.preSelection.size() > n)
+                preSelections[n] = args.preSelection.at(n);
             std::cout << groups[n] << "  " << rootFileNames[n] << "  " << treeNames[n] << std::endl;
             trees[n] = LoadTree(rootFiles[n], rootFileNames[n], treeNames[n], preSelections[n]);
         }
+
+        canvas = std::make_unique<TCanvas>("canvas", "canvas", 600, 600);
 
         file_name = "PlotsDiff_" + channel + "_" + sample + "_" + groups[0] + "_" + groups[1] + ".pdf";
         gErrorIgnoreLevel = kWarning;
@@ -101,10 +103,13 @@ public:
 
     ~EventSync()
     {
-        for(size_t n = 0; n < N; ++n)
+        canvas.reset();
+        for(size_t n = 0; n < N; ++n) {
             trees[n].reset();
+            rootFiles[n].reset();
+        }
         tmpRootFile.reset();
-        boost::filesystem::remove(tmpName);
+        std::filesystem::remove(tmpName);
     }
 
     void Run()
@@ -148,15 +153,16 @@ private:
     std::shared_ptr<TTree> LoadTree(std::shared_ptr<TFile>& file, const std::string& fileName,
                            const std::string& treeName, const std::string& preSelection)
     {
-        file = std::shared_ptr<TFile>(new TFile(fileName.c_str(), "READ"));
+        file = std::make_shared<TFile>(fileName.c_str(), "READ");
         std::shared_ptr<TTree> tree(root_ext::ReadObject<TTree>(*file, treeName));
         if(!tree)
             throw exception("File '%1%' is empty.") % fileName;
         if(preSelection.size() == 0)
             return tree;
         if(!tmpRootFile) {
-            tmpName = boost::filesystem::unique_path("%%%%-%%%%.root").native();
-            tmpRootFile = std::shared_ptr<TFile>(new TFile(tmpName.c_str(), "RECREATE"));
+            tmpName = std::tmpnam(nullptr);
+            tmpName += ".root";
+            tmpRootFile = std::make_shared<TFile>(tmpName.c_str(), "RECREATE");
         }
         tmpRootFile->cd();
         tree = std::shared_ptr<TTree>(tree->CopyTree(preSelection.c_str()));
@@ -171,11 +177,12 @@ private:
 
             using DataTypePair = std::pair<EDataType, EDataType>;
             using FillMethodPtr = void (EventSync::*)(const std::array<std::string, N>&, const SelectorFnArray&,
-                                  std::array<HistPtr, N>&, std::array<HistPtr, N>&, std::array<HistPtr, N>&, Hist2D&);
+                                  std::array<HistPtr, N>&, std::array<HistPtr, N>&, std::array<HistPtr, N>&, Hist2D&,
+                                  bool);
             using FillMethodMap = std::map<DataTypePair, FillMethodPtr>;
 
             const auto createHist = [&](const std::string& name) -> HistPtr {
-                return HistPtr(new Hist(name.c_str(), "", static_cast<int>(nbins), xmin, xmax));
+                return std::make_shared<Hist>(name.c_str(), "", static_cast<int>(nbins), xmin, xmax);
             };
             const auto createHist0 = [&](const std::string& suffix) -> HistPtr {
                 return createHist("H" + groups[0] + var_names[0] + suffix);
@@ -184,7 +191,7 @@ private:
                 return createHist("H" + groups[1] + var_names[0] + suffix);
             };
             const auto create2DHist = [&](const std::string& name) -> Hist2DPtr {
-                return Hist2DPtr(new Hist2D(name.c_str(), "", static_cast<int>(nbins), xmin, xmax, 61, -1.525, 1.525));
+                return std::make_shared<Hist2D>(name.c_str(), "", static_cast<int>(nbins), xmin, xmax, 61, -1.525, 1.525);
             };
 
             std::array<HistPtr, N> H_all = { createHist0("all"), createHist1("all") };
@@ -203,29 +210,25 @@ private:
                     throw exception("Branches with complex objects are not supported for branch '%1%'.") % var_names[n];
             }
 
+
             static const FillMethodMap fillMethods = {
-                { { kFloat_t, kFloat_t }, &EventSync::FillAllHistograms<Float_t, Float_t> },
                 { { kDouble_t, kDouble_t }, &EventSync::FillAllHistograms<Double_t, Double_t> },
-                { { kDouble_t, kFloat_t }, &EventSync::FillAllHistograms<Double_t, Float_t> },
-                { { kFloat_t, kDouble_t }, &EventSync::FillAllHistograms<Float_t, Double_t> },
-                { { kFloat_t, kUInt_t }, &EventSync::FillAllHistograms<Float_t, UInt_t> },
-                { { kInt_t, kInt_t }, &EventSync::FillAllHistograms<Int_t, Int_t> },
-                { { kInt_t, kUInt_t }, &EventSync::FillAllHistograms<Int_t, UInt_t> },
-                { { kUInt_t, kInt_t }, &EventSync::FillAllHistograms<UInt_t, Int_t> },
-                { { kInt_t, kDouble_t }, &EventSync::FillAllHistograms<Int_t, Double_t> },
-                { { kDouble_t, kInt_t }, &EventSync::FillAllHistograms<Double_t, Int_t> },
+                { { kDouble_t, kLong64_t }, &EventSync::FillAllHistograms<Double_t, Long64_t> },
+                { { kDouble_t, kULong64_t }, &EventSync::FillAllHistograms<Double_t, ULong64_t> },
+                { { kLong64_t, kLong64_t }, &EventSync::FillAllHistograms<Long64_t, Long64_t> },
+                { { kLong64_t, kULong64_t }, &EventSync::FillAllHistograms<Long64_t, ULong64_t> },
                 { { kULong64_t, kULong64_t }, &EventSync::FillAllHistograms<ULong64_t, ULong64_t> },
-                { { kBool_t, kBool_t }, &EventSync::FillAllHistograms<Bool_t, Bool_t> },
-                { { kBool_t, kChar_t }, &EventSync::FillAllHistograms<Bool_t, Char_t> },
-                { { kBool_t, kInt_t }, &EventSync::FillAllHistograms<Bool_t, Int_t> },
             };
 
-            const auto typePair = DataTypePair(data_types[0], data_types[1]);
+            const EDataType type0 = GetReferenceType(data_types[0]);
+            const EDataType type1 = GetReferenceType(data_types[1]);
+            const bool input_order = type0 <= type1;
+            const DataTypePair typePair = std::minmax(type0, type1);
             if(!fillMethods.count(typePair))
                 throw exception("Unknown branch type combination (%1%, %2%) for branch ('%3%', '%4%').")
                     % data_types[0] % data_types[1] % var_names[0] % var_names[1];
             FillMethodPtr fillMethod = fillMethods.at(typePair);
-            (this->*fillMethod)(var_names, selectors, H_all, H_common, H_diff, *H_0vs1);
+            (this->*fillMethod)(var_names, selectors, H_all, H_common, H_diff, *H_0vs1, input_order);
 
             DrawSuperimposedHistograms(H_all, selection_label, var_names, "all");
             DrawSuperimposedHistograms(H_common, selection_label, var_names, "common");
@@ -303,7 +306,7 @@ private:
         PrintCanvas(title);
         pad1.Clear();
         pad2.Clear();
-        canvas.Clear();
+        canvas->Clear();
     }
 
     void Draw2DHistogram(Hist2DPtr H_0vs1, const std::string& selection_label,
@@ -330,7 +333,7 @@ private:
 
         PrintCanvas(title + " 2D", isLastDraw);
         pad1.Clear();
-        canvas.Clear();
+        canvas->Clear();
     }
 
     void DrawTextLabels(std::array<size_t, N> n_events)
@@ -345,13 +348,25 @@ private:
         }
     }
 
-    template<typename VarType0, typename VarType1>
+    template<typename VarTypeA, typename VarTypeB>
     void FillAllHistograms(const std::array<std::string, N>& var_names, const SelectorFnArray& selectors,
                            std::array<HistPtr, N>& H_all, std::array<HistPtr, N>& H_common,
-                           std::array<HistPtr, N>& H_diff, Hist2D& H_0vs1)
+                           std::array<HistPtr, N>& H_diff, Hist2D& H_0vs1, bool input_order)
     {
-        const std::vector<VarType0> values0 = CollectValues<VarType0>(*trees[0], var_names[0]);
-        const std::vector<VarType1> values1 = CollectValues<VarType1>(*trees[1], var_names[1]);
+        if(input_order) {
+            FillAllHistogramsImpl<VarTypeA, VarTypeB>(var_names, selectors, H_all, H_common, H_diff, H_0vs1);
+        } else {
+            FillAllHistogramsImpl<VarTypeB, VarTypeA>(var_names, selectors, H_all, H_common, H_diff, H_0vs1);
+        }
+    }
+
+    template<typename VarType0, typename VarType1>
+    void FillAllHistogramsImpl(const std::array<std::string, N>& var_names, const SelectorFnArray& selectors,
+                               std::array<HistPtr, N>& H_all, std::array<HistPtr, N>& H_common,
+                               std::array<HistPtr, N>& H_diff, Hist2D& H_0vs1)
+    {
+        const std::vector<VarType0> values0 = CollectValuesEx<VarType0>(*trees[0], var_names[0]);
+        const std::vector<VarType1> values1 = CollectValuesEx<VarType1>(*trees[1], var_names[1]);
         FillCommonHistograms(var_names[0], values0, values1, selectors, H_common, H_0vs1);
         FillInclusiveHistogram(values0, selectors[0], *H_all[0]);
         FillInclusiveHistogram(values1, selectors[1], *H_all[1]);
@@ -376,7 +391,7 @@ private:
             const double y_value = value1 != VarType1(0)
                                  ? double(static_cast<VarType0>(value1) - value0) / value1 : -value0;
             const auto diff = static_cast<VarType0>(value1) - value0;
-            if (BadEventCheck<VarType0>::isBadEvent(value0, static_cast<VarType0>(value1), args.badThreshold())) {
+            if (BadEventCheck<VarType0>::isBadEvent(value0, static_cast<VarType0>(value1), args.badThreshold)) {
                 std::cout << event_entry_pair.first.GetLegendString() << " = " << event_entry_pair.first << ", "
                           << groups[1] << " = " << value1 << ", " << groups[0] << " = " << value0 << ", "
                           << groups[1] <<  " - " << groups[0] << " = " << diff << std::endl;
@@ -530,6 +545,22 @@ private:
         return result;
     }
 
+    static EDataType GetReferenceType(EDataType type)
+    {
+        using TypeSet = std::set<EDataType>;
+        using RefPair = std::pair<EDataType, TypeSet>;
+        static const std::vector<RefPair> ref_types = {
+            { kLong64_t, { kBool_t, kChar_t, kShort_t, kInt_t, kLong_t, kLong64_t } },
+            { kULong64_t, { kUChar_t, kUShort_t, kUInt_t, kULong_t, kULong64_t } },
+            { kDouble_t, { kFloat16_t, kDouble32_t, kFloat_t, kDouble_t } },
+        };
+        for(const auto& entry : ref_types) {
+            if(entry.second.count(type))
+                return entry.first;
+        }
+        return type;
+    }
+
     template<typename VarType>
     std::vector<VarType> CollectValuesEx(TTree& tree, const std::string& name)
     {
@@ -539,13 +570,21 @@ private:
         using CollectMethodMap = std::map<EDataType, CollectMethodPtr>;
 
         static const CollectMethodMap collectMethods = {
+            { kChar_t, &EventSync::CollectAndConvertValue<Char_t, VarType> },
+            { kUChar_t, &EventSync::CollectAndConvertValue<UChar_t, VarType> },
+            { kShort_t, &EventSync::CollectAndConvertValue<Short_t, VarType> },
+            { kUShort_t, &EventSync::CollectAndConvertValue<UShort_t, VarType> },
             { kInt_t, &EventSync::CollectAndConvertValue<Int_t, VarType> },
             { kUInt_t, &EventSync::CollectAndConvertValue<UInt_t, VarType> },
-            { kULong64_t, &EventSync::CollectAndConvertValue<ULong64_t, VarType> },
+            { kLong_t, &EventSync::CollectAndConvertValue<Long_t, VarType> },
+            { kULong_t, &EventSync::CollectAndConvertValue<ULong_t, VarType> },
             { kFloat_t, &EventSync::CollectAndConvertValue<Float_t, VarType> },
             { kDouble_t, &EventSync::CollectAndConvertValue<Double_t, VarType> },
-            { kChar_t, &EventSync::CollectAndConvertValue<Char_t, VarType> },
-            { kBool_t, &EventSync::CollectAndConvertValue<Bool_t, VarType> }
+            { kDouble32_t, &EventSync::CollectAndConvertValue<Double32_t, VarType> },
+            { kBool_t, &EventSync::CollectAndConvertValue<Bool_t, VarType> },
+            { kLong64_t, &EventSync::CollectAndConvertValue<Long64_t, VarType> },
+            { kULong64_t, &EventSync::CollectAndConvertValue<ULong64_t, VarType> },
+            { kFloat16_t, &EventSync::CollectAndConvertValue<Float16_t, VarType> },
         };
 
         TBranch* branch = tree.GetBranch(name.c_str());
@@ -609,8 +648,7 @@ private:
         else if(isLastPage && !isFirstPage)
             output_name << ")";
         isFirstPage = false;
-        canvas.Print(output_name.str().c_str(), print_options.str().c_str());
-
+        canvas->Print(output_name.str().c_str(), print_options.str().c_str());
     }
 
 private:
@@ -628,11 +666,9 @@ private:
     std::array<EventToEntryMap, N> group_events_only_map;
     EventToEntryPairMap common_event_to_entry_pair_map;
 
-    TCanvas canvas;
+    std::unique_ptr<TCanvas> canvas;
     std::string file_name;
     bool isFirstPage, isLastDraw;
 };
 
 } // namespace analysis
-
-PROGRAM_MAIN(analysis::EventSync, Arguments)

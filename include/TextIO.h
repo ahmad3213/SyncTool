@@ -105,11 +105,6 @@ std::string CollectionToString(const Collection& col, const std::string& separat
     return ss.str();
 }
 
-inline std::string RemoveFileExtension(const std::string& file_name)
-{
-    return boost::filesystem::change_extension(file_name, "").string();
-}
-
 inline std::string GetFileNameWithoutPath(const std::string& file_name)
 {
     const size_t lastindex = file_name.find_last_of("/");

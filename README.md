@@ -11,10 +11,8 @@ git clone https://github.com/cms-hh-bbtautau/SyncTool.git
 
 Should work in a python environment with ROOT. For example, on lxplus, one can use the LCG environment:
 ```sh
-# lxplus 7
-source /cvmfs/sft.cern.ch/lcg/views/setupViews.sh LCG_102 x86_64-centos7-gcc11-opt
-# lxplus 8
-source /cvmfs/sft.cern.ch/lcg/views/setupViews.sh LCG_102 x86_64-centos8-gcc11-opt
+# lxplus 9
+source /cvmfs/sft.cern.ch/lcg/views/setupViews.sh LCG_105 x86_64-el9-gcc13-opt
 ```
 
 ## EventSync
